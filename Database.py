@@ -7,33 +7,83 @@ class Database:
     def __init__(self, database_path: str) -> None:
         self.database_path = database_path
 
-    def connect(self) -> sqlite3.Connection:
-        """Conecta ao banco de dados e retorna um objeto de conexão
+    def connect(self) -> None:
+        """Conecta ao banco de dados"""
 
-        Returns:
-            sqlite3.Connection: Objeto de conexão conectado
-        """
-        return sqlite3.connect(self.database_path)
+        self.connection: sqlite3.Connection = sqlite3.connect(self.database_path)
+    
 
-    def configure_commentary_database(self, output_commentary_database_path: str) -> None:
+    def execute(self, sql: str) -> sqlite3.Cursor:
+      """Executa uma instrução no banco de dados e retorna o cursor com o resultado
+
+      Args:
+          sql (str): Instrução SQL a ser executada
+
+      Returns:
+          sqlite3.Cursor: Retorna o cursor com o resultado da execução
+      """
+
+      return self.connection.execute(sql)
+
+    def create_commentary_tables(self) -> None:
       """Configura o banco de dados de saída dos comentários"""
 
-      output_commentary_database = self.connect(
-          output_commentary_database_path)
+      cursor: sqlite3.Cursor = self.connection.cursor()
 
-      cursor: sqlite3.Cursor = output_commentary_database.cursor()
+      cursor.executescript("""
+      --Criação das tabelas
+      CREATE TABLE BookCommentary (Book	INT, Comments	TEXT);
+      CREATE TABLE ChapterCommentary (Book INT, Chapter INT, Comments TEXT);
+      CREATE TABLE VerseCommentary (Book INT, ChapterBegin INT, VerseBegin INT, ChapterEnd INT, VerseEnd INT, Comments TEXT);
+      CREATE TABLE data(rowid INTEGER primary key autoincrement, id TEXT collate nocase, filename TEXT, content BLOB);
+      CREATE TABLE Details (Title NVARCHAR(255), Abbreviation NVARCHAR(50), Information TEXT, Version INT, customcss TEXT);
 
-      # Cria a tabela de comentários
-      cursor.execute(
-          "CREATE TABLE VerseCommentary (Book INT, ChapterBegin INT, VerseBegin INT, ChapterEnd INT, VerseEnd INT, Comments TEXT)")
+      --Criação dos índices
+      CREATE INDEX BookChapterIndex ON ChapterCommentary (Book, Chapter);
+      CREATE INDEX BookChapterVerseIndex ON VerseCommentary (Book, ChapterBegin, VerseBegin);
+      CREATE INDEX BookIndex ON BookCommentary (Book);
+      CREATE UNIQUE INDEX idx_data_id on data(id);
+      """)
 
-      # Cria a tabela Details
-      cursor.execute(
-          "CREATE TABLE Details (Title NVARCHAR(255), Abbreviation NVARCHAR(50), Information TEXT, Version INT)")
+      cursor.close()
 
-      # Cría os índices para os campos Book, ChapterBegin e VerseBegin
-      cursor.execute(
-          "CREATE INDEX BookChapterVerseIndex ON VerseCommentary (Book, ChapterBegin, VerseBegin)")
 
-      # Popula a tabela Details
-      configure_output_commentary_details()
+    def configure_commentary_details(self, input_database: 'Database') -> None:
+      """Configura o banco de dados de saída dos comentários"""
+
+      sql_get_details: str = "SELECT * FROM Details LIMIT 1"
+
+      input_cursor: sqlite3.Cursor = input_database.execute(sql_get_details)
+      output_cursor: sqlite3.Cursor = self.connection.cursor()
+
+      result = input_cursor.fetchone()
+
+      data = dict(zip([column[0].lower()
+                  for column in input_cursor.description], result))
+
+      title = data.get("title", data.get("abbreviation", ""))
+      abbreviation = data.get("abbreviation", "")
+
+      description = data.get("description", "")
+      comments = data.get("comments", "")
+      information = "\n<hr />\n".join(filter(None, [description, comments]))
+      
+      version = 4
+
+      details = {
+          'title': title,
+          'abbreviation': abbreviation,
+          'information': information,
+          'version': version,
+          'customcss': ''
+      }
+
+      output_sql = "INSERT INTO Details VALUES (:title, :abbreviation, :information, :version, :customcss)"
+
+      output_cursor.execute(output_sql, details)
+
+      if output_cursor.connection.in_transaction:
+          output_cursor.execute("COMMIT")
+
+      input_cursor.close()
+      output_cursor.close()
