@@ -3,7 +3,10 @@ import sys
 import sqlite3
 
 import text_utils
-from models import Row
+from Utils import Utils
+from Database import Database
+
+from models import BibleRow
 
 
 output_directory: str = "./output"
@@ -24,10 +27,10 @@ output_commentary_database: sqlite3.Connection
 output_commentary_database_path: str
 """O caminho do banco de dados de saída dos comentários """
 
-pure_bible: list[Row] = []
+pure_bible: list[BibleRow] = []
 """Array com todos os registros da bíblia pura"""
 
-commentaries: list[Row] = []
+commentaries: list[BibleRow] = []
 """Array com todos os registros dos comentários"""
 
 
@@ -44,7 +47,7 @@ def connect_to_database(database_path: str) -> sqlite3.Connection:
     Returns:
         sqlite3.Connection: O objeto de conexão aberto
     """
-    return sqlite3.connect(database_path)
+    return Database(database_path).connect()
 
 
 def configure_output_bible_database() -> None:
@@ -190,15 +193,7 @@ def create_output_directory() -> None:
     """Cria o diretório de saída para os módulos"""
     global output_directory
 
-    temporary_directory = output_directory
-    i = 2
-
-    while os.path.exists(temporary_directory):
-        temporary_directory = output_directory + str(i)
-        i += 1
-
-    os.makedirs(temporary_directory)
-    output_directory = temporary_directory
+    output_directory = Utils.create_output_directory()
 
 
 def is_study_bible(cursor: sqlite3.Cursor) -> bool:
@@ -229,7 +224,7 @@ def process_raw_database() -> None:
     row = reading_cursor.fetchone()
 
     while row is not None:
-        record = Row(*row)
+        record = BibleRow(*row)
 
         text = record.scripture
 
@@ -282,7 +277,7 @@ def save_commentaries() -> None:
     writing_cursor.close()
 
 
-def extract_pure_text(record: Row) -> None:
+def extract_pure_text(record: BibleRow) -> None:
     """Extrai o texto puro e o adiciona ao array 'pure_text'
 
     Args:
@@ -303,7 +298,7 @@ def extract_pure_text(record: Row) -> None:
     pure_bible.append(record)
 
 
-def extract_commentaries(record: Row) -> None:
+def extract_commentaries(record: BibleRow) -> None:
     """Extrai somente o comentário do versículo
 
     Args:
@@ -361,8 +356,8 @@ O aplicativo e-Sword HD não aceita bíblia de estudos, então:
 
         while row is not None:
 
-            extract_pure_text(Row(*row))
-            extract_commentaries(Row(*row))
+            extract_pure_text(BibleRow(*row))
+            extract_commentaries(BibleRow(*row))
 
             row = cursor.fetchone()
 
